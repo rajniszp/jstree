@@ -566,7 +566,8 @@
 				data : {},
 				changed : [],
 				force_full_redraw : false,
-				redraw_timeout : false,
+				// redraw_timeout : false,
+				redraw_blocked: false,
 				default_state : {
 					loaded : true,
 					opened : false,
@@ -2371,8 +2372,16 @@
 		 * @trigger redraw.jstree
 		 */
 		_redraw : function () {
+			if (this._model.redraw_blocked) {
+				return;
+			}
 			var nodes = this._model.force_full_redraw ? this._model.data[$.jstree.root].children.concat([]) : this._model.changed.concat([]),
-				f = document.createElement('UL'), tmp, i, j, fe = this._data.core.focused;
+				f = document.createElement('UL'),
+				tmp,
+				i,
+				j,
+				fe = this._data.core.focused
+			;
 			for(i = 0, j = nodes.length; i < j; i++) {
 				tmp = this.redraw_node(nodes[i], true, this._model.force_full_redraw);
 				if(tmp && this._model.force_full_redraw) {
@@ -2410,6 +2419,9 @@
 		 * @param {Boolean} full if set to `true` all nodes are redrawn.
 		 */
 		redraw : function (full) {
+			if (this._model.redraw_blocked) {
+				return;
+			}
 			if(full) {
 				this._model.force_full_redraw = true;
 			}
@@ -2420,12 +2432,29 @@
 			this._redraw();
 		},
 		/**
+		 * blocks rendering
+		 */
+		block_redraw: function () {
+			this._model.redraw_blocked = true;
+		},
+		/**
+		 * restores rendering and calls this.redraw(full)
+		 * @param {Boolean} full if set to `true` all nodes are redrawn.
+		 */
+		restore_redraw: function (full) {
+			this._model.redraw_blocked = false;
+			this.redraw(full);
+		},
+		/**
 		 * redraws a single node's children. Used internally.
 		 * @private
 		 * @name draw_children(node)
 		 * @param {mixed} node the node whose children will be redrawn
 		 */
 		draw_children : function (node) {
+			if (this._model.redraw_blocked) {
+				return;
+			}
 			var obj = this.get_node(node),
 				i = false,
 				j = false,
@@ -2458,6 +2487,9 @@
 		 * @param {Boolean} force_render should children of closed parents be drawn anyway
 		 */
 		redraw_node : function (node, deep, is_callback, force_render) {
+			if (this._model.redraw_blocked) {
+				return false;
+			}
 			var obj = this.get_node(node),
 				par = false,
 				ind = false,
@@ -6817,7 +6849,25 @@
 		 * @name $.jstree.defaults.dnd.blank_space_drop
 		 * @plugin dnd
 		 */
-		blank_space_drop: false
+		blank_space_drop: false,
+		/**
+		 * controls whether all nodes are dragged or only top level selected nodes (ignoring children of selected nodes). Defaults to `false`.
+		 * @name $.jstree.defaults.dnd.drag_all_nodes
+		 * @plugin dnd
+		 */
+		drag_all_nodes: false,
+		/**
+		 * controls whether nodes that are dragged should be kept in the original order from origin tree (when true) or in order of selecting (when false). Defaults to `false`.
+		 * @name $.jstree.defaults.dnd.preserve_nodes_order
+		 * @plugin dnd
+		 */
+		preserve_nodes_order: false,
+		/**
+		 * a boolean indicating if dnd should be enabled or not. Useful if you want to dynamically disable editing of the tree. Defaults to `false`.
+		 * @name $.jstree.defaults.dnd.disabled
+		 * @plugin dnd
+		 */
+		disabled: false
 	};
 	var drg, elm;
 	// TODO: now check works by checking for each node individually, how about max_children, unique, etc?
@@ -6831,6 +6881,10 @@
 
 			this.element
 				.on(this.settings.dnd.use_html5 ? 'dragstart.jstree' : 'mousedown.jstree touchstart.jstree', this.settings.dnd.large_drag_target ? '.jstree-node' : '.jstree-anchor', function (e) {
+						if (this.settings.dnd.disabled) {
+							return false;
+						}
+					
 						if(this.settings.dnd.large_drag_target && $(e.target).closest('.jstree-node')[0] !== e.currentTarget) {
 							return true;
 						}
@@ -6838,7 +6892,7 @@
 							return true;
 						}
 						var obj = this.get_node(e.target),
-							mlt = this.is_selected(obj) && this.settings.dnd.drag_selection ? this.get_top_selected().length : 1,
+							mlt = this.is_selected(obj) && this.settings.dnd.drag_selection ? (this.settings.dnd.drag_all_nodes ? this.get_selected() : this.get_top_selected()).length : 1,
 							txt = (mlt > 1 ? mlt + ' ' + this.get_string('nodes') : this.get_text(e.currentTarget));
 						if(this.settings.core.force_text) {
 							txt = $.vakata.html.escape(txt);
@@ -6846,7 +6900,11 @@
 						if(obj && (obj.id || obj.id === 0) && obj.id !== $.jstree.root && (e.which === 1 || e.type === "touchstart" || e.type === "dragstart") &&
 							(this.settings.dnd.is_draggable === true || ($.vakata.is_function(this.settings.dnd.is_draggable) && this.settings.dnd.is_draggable.call(this, (mlt > 1 ? this.get_top_selected(true) : [obj]), e)))
 						) {
-							drg = { 'jstree' : true, 'origin' : this, 'obj' : this.get_node(obj,true), 'nodes' : mlt > 1 ? this.get_top_selected() : [obj.id] };
+							drg = { 'jstree' : true, 'origin' : this, 'obj' : this.get_node(obj,true), 'nodes' : mlt > 1 ? (this.settings.dnd.drag_all_nodes ? this.get_selected() : this.get_top_selected()) : [obj.id] };
+							if (this.settings.dnd.preserve_nodes_order) {
+								var ord = this.get_node($.jstree.root).children_d;
+								drg.nodes.sort(function (a, b) { return ord.indexOf(b) - ord.indexOf(a); });
+							}
 							elm = e.currentTarget;
 							if (this.settings.dnd.use_html5) {
 								$.vakata.dnd._trigger('start', e, { 'helper': $(), 'element': elm, 'data': drg });
@@ -6945,7 +7003,7 @@
 					rel = false,
 					tmp, l, t, h, p, i, o, ok, t1, t2, op, ps, pr, ip, tm, is_copy, pn, c;
 				// if we are over an instance
-				if(ins && ins._data && ins._data.dnd) {
+				if(ins && ins._data && ins._data.dnd && !ins.settings.dnd.disabled) {
 					marker.attr('class', 'jstree-' + ins.get_theme() + ( ins.settings.core.themes.responsive ? ' jstree-dnd-responsive' : '' ));
 					is_copy = data.data.origin && (data.data.origin.settings.dnd.always_copy || (data.data.origin.settings.dnd.copy && (data.event.metaKey || data.event.ctrlKey)));
 					data.helper
@@ -8639,14 +8697,28 @@
 						this.element.find('.jstree-wholerow-clicked').removeClass('jstree-wholerow-clicked');
 					}.bind(this))
 				.on("changed.jstree", function (e, data) {
-						this.element.find('.jstree-wholerow-clicked').removeClass('jstree-wholerow-clicked');
-						var tmp = false, i, j;
-						for(i = 0, j = data.selected.length; i < j; i++) {
-							tmp = this.get_node(data.selected[i], true);
-							if(tmp && tmp.length) {
+						this.element.find('.jstree-wholerow-clicked')
+							.parent() // <li class="jstree-node" id="...">
+							.filter(function() { var id = this.id; return !data.selected.some((s) => id == s); }) // not selected
+							.children('.jstree-wholerow-clicked')
+							.removeClass('jstree-wholerow-clicked');
+						var already_selected = this.element.find('.jstree-wholerow-clicked').parent().get().map(el => el.id);
+						var to_select = data.selected.filter(id => !already_selected.some(as => as == id)); // not already selected
+						var tmp;
+						for (var id of to_select) {
+							tmp = this.get_node(id, true);
+							if (tmp && tmp.length) {
 								tmp.children('.jstree-wholerow').addClass('jstree-wholerow-clicked');
 							}
 						}
+						// this.element.find('.jstree-wholerow-clicked').removeClass('jstree-wholerow-clicked');
+						// var tmp = false, i, j;
+						// for(i = 0, j = data.selected.length; i < j; i++) {
+						// 	tmp = this.get_node(data.selected[i], true);
+						// 	if(tmp && tmp.length) {
+						// 		tmp.children('.jstree-wholerow').addClass('jstree-wholerow-clicked');
+						// 	}
+						// }
 					}.bind(this))
 				.on("open_node.jstree", function (e, data) {
 						this.get_node(data.node, true).find('.jstree-clicked').parent().children('.jstree-wholerow').addClass('jstree-wholerow-clicked');
