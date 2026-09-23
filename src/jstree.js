@@ -566,7 +566,8 @@
 				data : {},
 				changed : [],
 				force_full_redraw : false,
-				redraw_timeout : false,
+				// redraw_timeout : false,
+				redraw_blocked: false,
 				default_state : {
 					loaded : true,
 					opened : false,
@@ -2371,8 +2372,16 @@
 		 * @trigger redraw.jstree
 		 */
 		_redraw : function () {
+			if (this._model.redraw_blocked) {
+				return;
+			}
 			var nodes = this._model.force_full_redraw ? this._model.data[$.jstree.root].children.concat([]) : this._model.changed.concat([]),
-				f = document.createElement('UL'), tmp, i, j, fe = this._data.core.focused;
+				f = document.createElement('UL'),
+				tmp,
+				i,
+				j,
+				fe = this._data.core.focused
+			;
 			for(i = 0, j = nodes.length; i < j; i++) {
 				tmp = this.redraw_node(nodes[i], true, this._model.force_full_redraw);
 				if(tmp && this._model.force_full_redraw) {
@@ -2410,6 +2419,9 @@
 		 * @param {Boolean} full if set to `true` all nodes are redrawn.
 		 */
 		redraw : function (full) {
+			if (this._model.redraw_blocked) {
+				return;
+			}
 			if(full) {
 				this._model.force_full_redraw = true;
 			}
@@ -2420,12 +2432,29 @@
 			this._redraw();
 		},
 		/**
+		 * blocks rendering
+		 */
+		block_redraw: function () {
+			this._model.redraw_blocked = true;
+		},
+		/**
+		 * restores rendering and calls this.redraw(full)
+		 * @param {Boolean} full if set to `true` all nodes are redrawn.
+		 */
+		restore_redraw: function (full) {
+			this._model.redraw_blocked = false;
+			this.redraw(full);
+		},
+		/**
 		 * redraws a single node's children. Used internally.
 		 * @private
 		 * @name draw_children(node)
 		 * @param {mixed} node the node whose children will be redrawn
 		 */
 		draw_children : function (node) {
+			if (this._model.redraw_blocked) {
+				return;
+			}
 			var obj = this.get_node(node),
 				i = false,
 				j = false,
@@ -2458,6 +2487,9 @@
 		 * @param {Boolean} force_render should children of closed parents be drawn anyway
 		 */
 		redraw_node : function (node, deep, is_callback, force_render) {
+			if (this._model.redraw_blocked) {
+				return false;
+			}
 			var obj = this.get_node(node),
 				par = false,
 				ind = false,
