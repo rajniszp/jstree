@@ -41,11 +41,17 @@
 						this.element.find('.jstree-wholerow-clicked').removeClass('jstree-wholerow-clicked');
 					}.bind(this))
 				.on("changed.jstree", function (e, data) {
-						this.element.find('.jstree-wholerow-clicked').removeClass('jstree-wholerow-clicked');
-						var tmp = false, i, j;
-						for(i = 0, j = data.selected.length; i < j; i++) {
-							tmp = this.get_node(data.selected[i], true);
-							if(tmp && tmp.length) {
+						this.element.find('.jstree-wholerow-clicked')
+							.parent() // <li class="jstree-node" id="...">
+							.filter(function() { var id = this.id; return !data.selected.some((s) => id == s); }) // not selected
+							.children('.jstree-wholerow-clicked')
+							.removeClass('jstree-wholerow-clicked');
+						var already_selected = this.element.find('.jstree-wholerow-clicked').parent().get().map(el => el.id);
+						var to_select = data.selected.filter(id => !already_selected.some(as => as == id)); // not already selected
+						var tmp;
+						for (var id of to_select) {
+							tmp = this.get_node(id, true);
+							if (tmp && tmp.length) {
 								tmp.children('.jstree-wholerow').addClass('jstree-wholerow-clicked');
 							}
 						}

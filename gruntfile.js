@@ -51,8 +51,9 @@ module.exports = function(grunt) {
     },
     jshint: {
       options: {
+        'esversion': 6,
         'curly' : true,
-        'eqeqeq' : true,
+        'eqeqeq' : false,
         'latedef' : true,
         'newcap' : true,
         'noarg' : true,
